@@ -6,7 +6,7 @@ Design docs:
 
 - [`docs/system-design.md`](./docs/system-design.md) — architecture, modules, design patterns, cross-cutting concerns, auth flow.
 - [`docs/database-design.md`](./docs/database-design.md) — table-by-table schema, ER diagram, lifecycle notes.
-- [`requirement.md`](./requirement.md) — original assignment brief.
+- [`document overview`](./SJ_Assignment_2026_Design_Document_EN.docx) — original assignment brief.
 
 ---
 
