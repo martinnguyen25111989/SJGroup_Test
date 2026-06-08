@@ -1,4 +1,4 @@
-# SJ Assignment 2026 — Location & Booking API
+# SJ Assignment for Nguyen Anh Tuan 2026 — Location Management & Booking Management API
 
 RESTful backend for managing a hierarchical building/floor/room tree and room bookings, built with **NestJS · TypeScript · TypeORM · PostgreSQL**.
 
@@ -304,15 +304,3 @@ Edit `src/seed/seed-data.ts` to swap in your own dataset.
 | `npm test`           | Jest unit tests                          |
 | `npm run db:seed`    | Seed sample data                         |
 | `npm run lint`       | ESLint                                   |
-
----
-
-## Implementation status
-
-- [x] Day 1 — Project scaffold, entities, env wiring
-- [x] Day 2 — Location CRUD + tree endpoints
-- [x] Day 3 — OpenTime parser + seed runner
-- [x] Day 4 — Booking module + three validation rules (Strategy pattern)
-- [x] Day 5 — Global exception filter + logging interceptor
-- [x] Day 6 — Tests + Swagger polish + Logging 
-- [x] Day 7 — Final refactor + push

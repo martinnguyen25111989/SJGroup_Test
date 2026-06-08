@@ -178,23 +178,7 @@ Each booking request must pass all three rules; if any rule is violated, the boo
 - Logging interceptor records the method, URL, and processing time of each request.
 - Errors are logged with stack traces at `error` level; normal requests at `log`/`debug` level.
 
----
-
-## 9. Implementation Plan (1 week)
-
-| Day   | Tasks                                                                            |
-|-------|----------------------------------------------------------------------------------|
-| Day 1 | Set up NestJS + TypeORM + Postgres, configure environment, build entities        |
-| Day 2 | Location CRUD and tree logic (create / read-tree / update / delete)              |
-| Day 3 | Open Time parsing and seeding sample data from the brief                         |
-| Day 4 | Booking module and the three validation rules (Strategy pattern)                 |
-| Day 5 | Exception filter, logging interceptor, edge-case handling                        |
-| Day 6 | Write tests, Swagger docs, README (system + DB design)                           |
-| Day 7 | Refactor for clean code, push to GitHub, verify deliverables                     |
-
----
-
-## 10. Delivery Checklist
+## 09. Delivery Checklist
 
 - [ ] Source code on a personal GitHub account (public).
 - [ ] README: run instructions, system design, database diagram.
