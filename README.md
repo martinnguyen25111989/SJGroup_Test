@@ -206,11 +206,12 @@ A booking is `CONFIRMED` only if all three pass; otherwise `REJECTED` with `fail
 
 ## Database schema
 
-Three tables (see [`requirement.md`](./requirement.md) §4 for column-level detail):
+Four tables (see [`docs/database-design.md`](./docs/database-design.md) for column-level detail):
 
 - `locations` — self-referencing adjacency list (`parentId` → `locations.id`)
 - `open_times` — day range + time range, or `isAlwaysOpen`
 - `bookings` — FK to `locations.id`, enum `status`
+- `users` — JWT auth subjects (unique email + bcrypt hash)
 
 ```
 +---------------------+              +-----------------+
