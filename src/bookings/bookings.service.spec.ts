@@ -63,6 +63,7 @@ async function buildService(opts: {
     create: jest.fn((data) => data as Booking),
     save: jest.fn(async (data) => ({ id: 'b1', ...data }) as Booking),
     find: jest.fn(),
+    findAndCount: jest.fn(async () => [[], 0] as [Booking[], number]),
     findOne: jest.fn(),
   };
   const locationsRepo = { findOne: jest.fn(async () => opts.room) };
@@ -130,5 +131,30 @@ describe('BookingsService.create', () => {
       validators: [],
     });
     await expect(service.create(dto)).rejects.toBeInstanceOf(LocationNotBookableException);
+  });
+});
+
+describe('BookingsService.findAll', () => {
+  it('applies skip/take and wraps the result with pagination meta', async () => {
+    const { service, bookingsRepo } = await buildService({ room: null, validators: [] });
+    bookingsRepo.findAndCount.mockResolvedValueOnce([
+      [{ id: 'b1' } as Booking, { id: 'b2' } as Booking],
+      42,
+    ]);
+
+    const result = await service.findAll({
+      page: 3,
+      limit: 2,
+      status: BookingStatus.CONFIRMED,
+    });
+
+    expect(bookingsRepo.findAndCount).toHaveBeenCalledWith({
+      where: { status: BookingStatus.CONFIRMED },
+      order: { createdAt: 'DESC' },
+      skip: 4,
+      take: 2,
+    });
+    expect(result.meta).toEqual({ total: 42, page: 3, limit: 2, totalPages: 21 });
+    expect(result.data).toHaveLength(2);
   });
 });

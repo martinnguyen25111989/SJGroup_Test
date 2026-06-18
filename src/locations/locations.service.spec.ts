@@ -143,3 +143,28 @@ describe('LocationsService.remove', () => {
     expect(locationsRepo.remove).toHaveBeenCalled();
   });
 });
+
+describe('LocationsService.findTree', () => {
+  const roots: Location[] = [
+    { id: 'a', parentId: null } as Location,
+    { id: 'b', parentId: null } as Location,
+    { id: 'c', parentId: null } as Location,
+  ];
+
+  it('paginates the root nodes and reports total/totalPages', async () => {
+    const { service } = await buildModule({
+      locations: { find: jest.fn(async () => roots) },
+    });
+    const result = await service.findTree({ page: 1, limit: 2 });
+    expect(result.data.map((r) => r.id)).toEqual(['a', 'b']);
+    expect(result.meta).toEqual({ total: 3, page: 1, limit: 2, totalPages: 2 });
+  });
+
+  it('returns the second page', async () => {
+    const { service } = await buildModule({
+      locations: { find: jest.fn(async () => roots) },
+    });
+    const result = await service.findTree({ page: 2, limit: 2 });
+    expect(result.data.map((r) => r.id)).toEqual(['c']);
+  });
+});

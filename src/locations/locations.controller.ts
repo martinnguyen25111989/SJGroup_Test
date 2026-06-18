@@ -24,6 +24,7 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { LocationsService } from './locations.service';
@@ -45,9 +46,9 @@ export class LocationsController {
   }
 
   @Get('tree')
-  @ApiOperation({ summary: 'Retrieve the full location tree' })
-  findTree() {
-    return this.service.findTree();
+  @ApiOperation({ summary: 'Retrieve the location tree, paginated by root (BUILDING) nodes' })
+  findTree(@Query() query: PaginationQueryDto) {
+    return this.service.findTree(query);
   }
 
   @Get(':id')

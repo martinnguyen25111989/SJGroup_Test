@@ -105,7 +105,8 @@ src/
 │   └── locations.module.ts
 ├── bookings/
 │   ├── dto/                    # CreateBookingDto, QueryBookingsDto
-│   ├── validators/             # Strategy: Department, Capacity, Time + interface
+│   ├── validators/             # Strategy: Department, Capacity, Time, Overlap + interface
+│   ├── booking-audit.logger.ts # Records rejected attempts off the transactional path
 │   ├── booking.entity.ts
 │   ├── bookings.controller.ts
 │   ├── bookings.service.ts
@@ -151,7 +152,7 @@ In Swagger UI, click **Authorize** and paste the `accessToken` value (no `Bearer
 | Method | Endpoint              | Auth | Description                                |
 |--------|-----------------------|------|--------------------------------------------|
 | POST   | `/locations`          | JWT  | Create a node (validates parent)           |
-| GET    | `/locations/tree`     | —    | Full hierarchy as a nested tree            |
+| GET    | `/locations/tree`     | —    | Hierarchy as nested trees, paginated by root (BUILDING) node — `?page=&limit=` |
 | GET    | `/locations/:id`      | —    | Single location                            |
 | PATCH  | `/locations/:id`      | JWT  | Update name/department/capacity/openTime   |
 | DELETE | `/locations/:id?cascade=true` | JWT | Delete (blocked if children unless cascade) |
@@ -160,8 +161,8 @@ In Swagger UI, click **Authorize** and paste the `accessToken` value (no `Bearer
 
 | Method | Endpoint           | Auth | Description                                                |
 |--------|--------------------|------|------------------------------------------------------------|
-| POST   | `/bookings`        | JWT  | Create; returns `{ booking, failures[] }`. `booking.status` is `CONFIRMED` only if all 3 rules pass. |
-| GET    | `/bookings`        | —    | List; filter by `locationId`, `bookingDate`, `status`     |
+| POST   | `/bookings`        | JWT  | Create. `201` with the persisted `CONFIRMED` booking when all rules pass; `422` with `failures[]` (nothing persisted) when any rule fails. |
+| GET    | `/bookings`        | —    | List (paginated); filter by `locationId`, `bookingDate`, `status`; page via `?page=&limit=` |
 | GET    | `/bookings/:id`    | —    | Single booking                                             |
 
 Sample request:
@@ -178,29 +179,48 @@ POST /bookings
 }
 ```
 
-Rejected response payload includes per-rule failures:
+A valid booking returns `201 Created` with the persisted record (`status: "CONFIRMED"`).
+
+When any rule fails the request is rejected with **`422 Unprocessable Entity`** and **nothing is written to the `bookings` table** — an invalid booking is not a real reservation. The body lists every failed rule:
 
 ```json
 {
-  "booking": { "id": "...", "status": "REJECTED", "...": "..." },
+  "statusCode": 422,
+  "message": "Booking rejected by validation rules",
   "failures": [
     { "rule": "CapacityCheck",  "reason": "Attendees 12 exceed room capacity 8" },
-    { "rule": "TimeValidation", "reason": "Sat is outside the room's open days (Mon-Fri)" }
+    { "rule": "OverlapCheck",   "reason": "Overlaps existing booking 7c2… (10:30:00-11:30:00)" }
   ]
 }
 ```
+
+Rejected attempts are still recorded on a separate audit channel (`BookingAuditLogger`) so room demand/abuse can be analysed without polluting the transactional table.
+
+### Pagination
+
+List endpoints (`GET /bookings`, `GET /locations/tree`) accept `?page=` (1-based, default `1`) and `?limit=` (default `20`, max `100`) and return a uniform envelope:
+
+```json
+{
+  "data": [ /* page of items */ ],
+  "meta": { "total": 42, "page": 3, "limit": 2, "totalPages": 21 }
+}
+```
+
+`GET /bookings` paginates at the DB level (`findAndCount` + `skip`/`take`). `GET /locations/tree` paginates by **root (BUILDING) node** — each page returns whole subtrees; the hierarchy can't be offset-paginated at the DB level without breaking parent/child links, and the node count is bounded by the building/floor/room domain.
 
 ---
 
 ## Validation rules
 
-A booking is `CONFIRMED` only if all three pass; otherwise `REJECTED` with `failures[]`:
+A booking is persisted as `CONFIRMED` only if all four rules pass; if any fails the request returns `422` and nothing is stored:
 
 | # | Rule (Strategy class)   | Source                                            | Passes when                                                                              |
 |---|-------------------------|---------------------------------------------------|------------------------------------------------------------------------------------------|
 | 1 | `DepartmentValidator`   | `src/bookings/validators/department.validator.ts` | `booking.department === room.department`                                                 |
 | 2 | `CapacityValidator`     | `src/bookings/validators/capacity.validator.ts`   | `booking.attendees <= room.capacity` (and capacity is set)                               |
 | 3 | `TimeValidator`         | `src/bookings/validators/time.validator.ts`       | start < end, day in `openTime` range (handles wraparound), times within open hours       |
+| 4 | `OverlapValidator`      | `src/bookings/validators/overlap.validator.ts`    | no `CONFIRMED` booking in the same room/day overlaps the requested range (back-to-back is allowed) |
 
 ---
 
@@ -246,7 +266,7 @@ Four tables (see [`docs/database-design.md`](./docs/database-design.md) for colu
 
 ### Applied design patterns
 
-- **Strategy** — `BookingValidator` interface with three concrete classes (`DepartmentValidator`, `CapacityValidator`, `TimeValidator`) injected as an array via the `BOOKING_VALIDATORS` token. New rules drop in without touching the service.
+- **Strategy** — `BookingValidator` interface with four concrete classes (`DepartmentValidator`, `CapacityValidator`, `TimeValidator`, `OverlapValidator`) injected as an array via the `BOOKING_VALIDATORS` token. Validators may be sync or async (`OverlapValidator` queries existing bookings). New rules drop in without touching the service.
 - **Repository** — TypeORM repositories injected through `@InjectRepository`, keeping data access out of the services.
 - **DTO + class-validator** — controllers receive shape-validated DTOs; `whitelist + forbidNonWhitelisted` blocks unknown fields.
 
@@ -255,7 +275,7 @@ Four tables (see [`docs/database-design.md`](./docs/database-design.md) for colu
 - **Global exception filter** (`HttpExceptionFilter`) — uniform `{ statusCode, message, error?, reasons?, path, requestId, timestamp }` shape. 5xx logs include stack traces; 4xx log at `warn`.
 - **Logging interceptor** (`LoggingInterceptor`) — paired inbound/outbound lines per request: `→ METHOD URL [reqId]` then `← METHOD URL status duration_ms [reqId]`. Slow responses (≥ `SLOW_REQUEST_MS`) log as `SLOW …` warn.
 - **Request-id middleware** (`RequestIdMiddleware`) — echoes the inbound `X-Request-Id` header or generates a UUID, sets the response header, attaches `req.id`. The id is included in HTTP logs and in every error body so a client can grep server logs from a single response.
-- **Domain logging** — `BookingsService` logs `CONFIRMED`/`REJECTED` outcomes (with failure reasons); `LocationsService` logs create/remove events.
+- **Domain logging** — rejected booking attempts are recorded by `BookingAuditLogger` as structured log lines, kept off the transactional path so the audit store can later be swapped for a table/Kafka/analytics sink; `LocationsService` logs create/remove events.
 - **Domain exceptions** in `src/common/exceptions/domain.exceptions.ts` map business errors to HTTP status codes consistently.
 
 ### Logging configuration
@@ -265,12 +285,12 @@ Four tables (see [`docs/database-design.md`](./docs/database-design.md) for colu
 | `LOG_LEVEL`       | `error,warn,log`       | CSV of Nest log levels (`error,warn,log,debug,verbose`)                    |
 | `SLOW_REQUEST_MS` | `1000`                 | Requests at or above this duration are tagged `SLOW` and logged at `warn` |
 
-Example wire trace for a rejected booking:
+Example wire trace for a rejected booking (request returns `422`, nothing persisted):
 
 ```
-[Nest] HTTP    → POST /bookings [3e1f…]
-[Nest] BookingsService    Booking 7c2… REJECTED: CapacityCheck(Attendees 12 exceed room capacity 8)
-[Nest] HTTP    ← POST /bookings 201 14.3ms [3e1f…]
+[Nest] HTTP        → POST /bookings [3e1f…]
+[Nest] BookingAudit  {"event":"booking_rejected","locationId":"…","failures":[{"rule":"CapacityCheck","reason":"Attendees 12 exceed room capacity 8"}], … }
+[Nest] HTTP        ← POST /bookings 422 14.3ms [3e1f…]
 ```
 
 ---

@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { Paginated, paginate } from '../common/dto/paginated';
 import { LocationType } from '../common/enums/location-type.enum';
 import {
   DuplicateLocationNumberException,
@@ -68,11 +70,19 @@ export class LocationsService {
     return found;
   }
 
-  async findTree(): Promise<Location[]> {
+  // The hierarchy can't be offset-paginated at the DB level without breaking
+  // parent/child links, so we assemble the full tree and paginate the root
+  // (BUILDING) nodes — each page returns whole subtrees. Node count here is
+  // bounded by the building/floor/room domain.
+  async findTree(query: PaginationQueryDto): Promise<Paginated<Location>> {
     const all = await this.locations.find({
       order: { locationNumber: 'ASC' },
     });
-    return this.assembleTree(all);
+    const roots = this.assembleTree(all);
+
+    const { page, limit } = query;
+    const data = roots.slice((page - 1) * limit, (page - 1) * limit + limit);
+    return paginate(data, roots.length, page, limit);
   }
 
   async update(id: string, dto: UpdateLocationDto): Promise<Location> {

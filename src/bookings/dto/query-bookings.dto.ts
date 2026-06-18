@@ -1,8 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { BookingStatus } from '../../common/enums/booking-status.enum';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
-export class QueryBookingsDto {
+export class QueryBookingsDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Filter by room id' })
   @IsOptional()
   @IsUUID()

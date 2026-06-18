@@ -9,6 +9,7 @@ import {
   LocationNotBookableException,
   LocationNotFoundException,
 } from '../common/exceptions/domain.exceptions';
+import { Paginated, paginate } from '../common/dto/paginated';
 import { Location } from '../locations/location.entity';
 import { BookingAuditLogger } from './booking-audit.logger';
 import { Booking } from './booking.entity';
@@ -67,12 +68,20 @@ export class BookingsService {
     return this.bookings.save(booking);
   }
 
-  findAll(query: QueryBookingsDto): Promise<Booking[]> {
+  async findAll(query: QueryBookingsDto): Promise<Paginated<Booking>> {
     const where: FindOptionsWhere<Booking> = {};
     if (query.locationId) where.locationId = query.locationId;
     if (query.bookingDate) where.bookingDate = query.bookingDate;
     if (query.status) where.status = query.status;
-    return this.bookings.find({ where, order: { createdAt: 'DESC' } });
+
+    const { page, limit } = query;
+    const [data, total] = await this.bookings.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return paginate(data, total, page, limit);
   }
 
   async findOne(id: string): Promise<Booking> {
