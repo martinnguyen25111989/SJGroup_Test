@@ -3,8 +3,11 @@ import { LocationType } from '../../common/enums/location-type.enum';
 import { Location } from '../../locations/location.entity';
 import { OpenTime } from '../../locations/open-time.entity';
 import { CreateBookingDto } from '../dto/create-booking.dto';
+import { BookingStatus } from '../../common/enums/booking-status.enum';
+import { Booking } from '../booking.entity';
 import { CapacityValidator } from './capacity.validator';
 import { DepartmentValidator } from './department.validator';
+import { OverlapValidator } from './overlap.validator';
 import { TimeValidator } from './time.validator';
 
 function makeRoom(overrides: Partial<Location> = {}): Location {
@@ -147,5 +150,46 @@ describe('TimeValidator', () => {
     expect(
       validator.validate(makeBooking({ bookingDate: '2026-06-14' }), room).passed,
     ).toBe(true);
+  });
+});
+
+describe('OverlapValidator', () => {
+  function makeValidator(existing: Partial<Booking>[]) {
+    const repo = {
+      find: jest.fn(async () => existing as Booking[]),
+    };
+    return { validator: new OverlapValidator(repo as never), repo };
+  }
+
+  it('passes when no confirmed booking exists for the room/day', async () => {
+    const { validator, repo } = makeValidator([]);
+    const result = await validator.validate(makeBooking(), makeRoom());
+    expect(result.passed).toBe(true);
+    expect(repo.find).toHaveBeenCalledWith({
+      where: {
+        locationId: 'loc',
+        bookingDate: '2026-06-10',
+        status: BookingStatus.CONFIRMED,
+      },
+    });
+  });
+
+  it('rejects a booking that overlaps an existing confirmed booking', async () => {
+    const { validator } = makeValidator([
+      { id: 'existing-1', startTime: '10:30:00', endTime: '11:30:00' },
+    ]);
+    // new booking 10:00-11:00 overlaps 10:30-11:30
+    const result = await validator.validate(makeBooking(), makeRoom());
+    expect(result.passed).toBe(false);
+    expect(result.reason).toMatch(/overlaps/i);
+  });
+
+  it('allows back-to-back bookings that only touch at the boundary', async () => {
+    const { validator } = makeValidator([
+      { id: 'existing-1', startTime: '09:00:00', endTime: '10:00:00' },
+    ]);
+    // new booking 10:00-11:00 starts exactly when the other ends
+    const result = await validator.validate(makeBooking(), makeRoom());
+    expect(result.passed).toBe(true);
   });
 });

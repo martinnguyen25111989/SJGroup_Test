@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { BookingStatus } from '../common/enums/booking-status.enum';
@@ -24,8 +24,6 @@ export interface BookingResult {
 
 @Injectable()
 export class BookingsService {
-  private readonly logger = new Logger(BookingsService.name);
-
   constructor(
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
     @InjectRepository(Location) private readonly locations: Repository<Location>,
@@ -44,7 +42,7 @@ export class BookingsService {
 
     const failures: { rule: string; reason: string }[] = [];
     for (const validator of this.validators) {
-      const result = validator.validate(dto, room);
+      const result = await validator.validate(dto, room);
       if (!result.passed) {
         failures.push({ rule: validator.name, reason: result.reason ?? 'failed' });
       }
@@ -61,15 +59,6 @@ export class BookingsService {
     });
 
     const saved = await this.bookings.save(booking);
-    if (failures.length === 0) {
-      this.logger.log(
-        `Booking ${saved.id} CONFIRMED for room=${dto.locationId} dept=${dto.department} attendees=${dto.attendees}`,
-      );
-    } else {
-      this.logger.warn(
-        `Booking ${saved.id} REJECTED: ${failures.map((f) => `${f.rule}(${f.reason})`).join('; ')}`,
-      );
-    }
     return { booking: saved, failures };
   }
 

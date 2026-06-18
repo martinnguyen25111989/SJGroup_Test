@@ -8,7 +8,10 @@ export interface ValidationResult {
 
 export interface BookingValidator {
   readonly name: string;
-  validate(booking: CreateBookingDto, room: Location): ValidationResult;
+  validate(
+    booking: CreateBookingDto,
+    room: Location,
+  ): ValidationResult | Promise<ValidationResult>;
 }
 
 export const BOOKING_VALIDATORS = Symbol('BOOKING_VALIDATORS');
