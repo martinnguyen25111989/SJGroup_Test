@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LocationsModule } from '../locations/locations.module';
 import { Booking } from './booking.entity';
+import { BookingAuditLogger } from './booking-audit.logger';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { CapacityValidator } from './validators/capacity.validator';
@@ -15,6 +16,7 @@ import { BOOKING_VALIDATORS } from './validators/booking-validator.interface';
   controllers: [BookingsController],
   providers: [
     BookingsService,
+    BookingAuditLogger,
     DepartmentValidator,
     CapacityValidator,
     TimeValidator,

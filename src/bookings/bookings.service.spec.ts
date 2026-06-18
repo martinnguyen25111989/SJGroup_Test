@@ -4,10 +4,12 @@ import { BookingStatus } from '../common/enums/booking-status.enum';
 import { Department } from '../common/enums/department.enum';
 import { LocationType } from '../common/enums/location-type.enum';
 import {
+  BookingRejectedException,
   LocationNotBookableException,
   LocationNotFoundException,
 } from '../common/exceptions/domain.exceptions';
 import { Location } from '../locations/location.entity';
+import { BookingAuditLogger } from './booking-audit.logger';
 import { Booking } from './booking.entity';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
@@ -64,6 +66,7 @@ async function buildService(opts: {
     findOne: jest.fn(),
   };
   const locationsRepo = { findOne: jest.fn(async () => opts.room) };
+  const audit = { recordRejection: jest.fn() };
 
   const module = await Test.createTestingModule({
     providers: [
@@ -71,41 +74,49 @@ async function buildService(opts: {
       { provide: getRepositoryToken(Booking), useValue: bookingsRepo },
       { provide: getRepositoryToken(Location), useValue: locationsRepo },
       { provide: BOOKING_VALIDATORS, useValue: opts.validators },
+      { provide: BookingAuditLogger, useValue: audit },
     ],
   }).compile();
 
-  return { service: module.get(BookingsService), bookingsRepo, locationsRepo };
+  return { service: module.get(BookingsService), bookingsRepo, locationsRepo, audit };
 }
 
 describe('BookingsService.create', () => {
-  it('marks the booking CONFIRMED when every validator passes', async () => {
-    const { service } = await buildService({
+  it('persists the booking as CONFIRMED when every validator passes', async () => {
+    const { service, bookingsRepo, audit } = await buildService({
       room: makeRoom(),
       validators: [
         new StubValidator('R1', { passed: true }),
         new StubValidator('R2', { passed: true }),
       ],
     });
-    const result = await service.create(dto);
-    expect(result.booking.status).toBe(BookingStatus.CONFIRMED);
-    expect(result.failures).toEqual([]);
+    const booking = await service.create(dto);
+    expect(booking.status).toBe(BookingStatus.CONFIRMED);
+    expect(bookingsRepo.save).toHaveBeenCalledTimes(1);
+    expect(audit.recordRejection).not.toHaveBeenCalled();
   });
 
-  it('marks the booking REJECTED and collects every failure reason', async () => {
-    const { service } = await buildService({
-      room: makeRoom(),
-      validators: [
-        new StubValidator('R1', { passed: true }),
-        new StubValidator('R2', { passed: false, reason: 'too many' }),
-        new StubValidator('R3', { passed: false, reason: 'closed' }),
-      ],
-    });
-    const result = await service.create(dto);
-    expect(result.booking.status).toBe(BookingStatus.REJECTED);
-    expect(result.failures).toEqual([
+  it('throws 422 with every failure reason and persists nothing when a rule fails', async () => {
+    const failingValidators = [
+      new StubValidator('R1', { passed: true }),
+      new StubValidator('R2', { passed: false, reason: 'too many' }),
+      new StubValidator('R3', { passed: false, reason: 'closed' }),
+    ];
+    const expectedFailures = [
       { rule: 'R2', reason: 'too many' },
       { rule: 'R3', reason: 'closed' },
-    ]);
+    ];
+
+    const { service, bookingsRepo, audit } = await buildService({
+      room: makeRoom(),
+      validators: failingValidators,
+    });
+    await expect(service.create(dto)).rejects.toBeInstanceOf(BookingRejectedException);
+    await expect(service.create(dto)).rejects.toMatchObject({
+      response: { failures: expectedFailures },
+    });
+    expect(bookingsRepo.save).not.toHaveBeenCalled();
+    expect(audit.recordRejection).toHaveBeenCalledWith(dto, expectedFailures);
   });
 
   it('throws LocationNotFoundException when the room does not exist', async () => {

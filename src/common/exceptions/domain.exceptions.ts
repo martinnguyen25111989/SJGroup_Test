@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   NotFoundException,
   UnprocessableEntityException,
@@ -41,8 +40,8 @@ export class LocationNotBookableException extends UnprocessableEntityException {
   }
 }
 
-export class BookingRejectedException extends BadRequestException {
-  constructor(reasons: string[]) {
-    super({ message: 'Booking rejected', reasons });
+export class BookingRejectedException extends UnprocessableEntityException {
+  constructor(failures: { rule: string; reason: string }[]) {
+    super({ message: 'Booking rejected by validation rules', failures });
   }
 }

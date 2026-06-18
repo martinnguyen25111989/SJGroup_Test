@@ -15,6 +15,7 @@ import {
   ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BookingsService } from './bookings.service';
@@ -32,8 +33,10 @@ export class BookingsController {
   @ApiOperation({ summary: 'Create a booking; runs the three validation rules' })
   @ApiResponse({
     status: 201,
-    description:
-      'Booking persisted. Status is CONFIRMED when all rules pass, REJECTED with `failures[]` otherwise.',
+    description: 'Booking created with status CONFIRMED (all rules passed).',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'Booking violates one or more rules; nothing is persisted. Body contains `failures[]`.',
   })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid JWT' })
   @ApiNotFoundResponse({ description: 'Room not found' })

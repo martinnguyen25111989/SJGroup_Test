@@ -5,10 +5,12 @@ import { BookingStatus } from '../common/enums/booking-status.enum';
 import { LocationType } from '../common/enums/location-type.enum';
 import {
   BookingNotFoundException,
+  BookingRejectedException,
   LocationNotBookableException,
   LocationNotFoundException,
 } from '../common/exceptions/domain.exceptions';
 import { Location } from '../locations/location.entity';
+import { BookingAuditLogger } from './booking-audit.logger';
 import { Booking } from './booking.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { QueryBookingsDto } from './dto/query-bookings.dto';
@@ -17,20 +19,16 @@ import {
   BookingValidator,
 } from './validators/booking-validator.interface';
 
-export interface BookingResult {
-  booking: Booking;
-  failures: { rule: string; reason: string }[];
-}
-
 @Injectable()
 export class BookingsService {
   constructor(
     @InjectRepository(Booking) private readonly bookings: Repository<Booking>,
     @InjectRepository(Location) private readonly locations: Repository<Location>,
     @Inject(BOOKING_VALIDATORS) private readonly validators: BookingValidator[],
+    private readonly audit: BookingAuditLogger,
   ) {}
 
-  async create(dto: CreateBookingDto): Promise<BookingResult> {
+  async create(dto: CreateBookingDto): Promise<Booking> {
     const room = await this.locations.findOne({
       where: { id: dto.locationId },
       relations: { openTime: true },
@@ -48,6 +46,14 @@ export class BookingsService {
       }
     }
 
+    // An invalid booking is never a real reservation: reject with 422 and
+    // persist nothing in `bookings`. The attempt is recorded on a separate
+    // audit channel so demand/abuse can still be analysed.
+    if (failures.length > 0) {
+      this.audit.recordRejection(dto, failures);
+      throw new BookingRejectedException(failures);
+    }
+
     const booking = this.bookings.create({
       locationId: dto.locationId,
       department: dto.department,
@@ -55,11 +61,10 @@ export class BookingsService {
       bookingDate: dto.bookingDate,
       startTime: dto.startTime,
       endTime: dto.endTime,
-      status: failures.length === 0 ? BookingStatus.CONFIRMED : BookingStatus.REJECTED,
+      status: BookingStatus.CONFIRMED,
     });
 
-    const saved = await this.bookings.save(booking);
-    return { booking: saved, failures };
+    return this.bookings.save(booking);
   }
 
   findAll(query: QueryBookingsDto): Promise<Booking[]> {
